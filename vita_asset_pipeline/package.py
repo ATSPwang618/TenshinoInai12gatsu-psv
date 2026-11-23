@@ -1,4 +1,4 @@
-"""Prepare unchanged archives and a validated opening in a content-addressed cache."""
+"""Prepare original archives, localized menus and opening in a content-addressed cache."""
 import hashlib
 import json
 import os
@@ -9,6 +9,7 @@ import sys
 import uuid
 
 from .common import checked_path, file_record, read_json, validate_locations, verify_files, write_json
+from . import menu
 
 
 ARCHIVES = ('char.a', 'ed.a', 'egbg.a', 'music.a', 'se.a', 'sys.a', 'tenshi_dvd.a', 'voice.a')
@@ -42,11 +43,17 @@ def prepare_data(project, source, work, ffmpeg, ffprobe, *, tool_versions):
     print('Checking all original archives and opening (full SHA256)...', flush=True)
     rows = source_records(project, source)
     recipe = read_json(project / 'assets/opening.json')
+    localization = menu.identity(project)
     scripts = [project / 'tools' / name for name in ('transcode-opening.py', 'index-opening.py')]
     scripts += [project / 'vita_asset_pipeline' / name for name in ('package.py', 'common.py')]
+    if localization:
+        scripts.append(project / 'vita_asset_pipeline/menu.py')
     identity = {'schema': 'tenshi-data-cache-v1', 'source': rows, 'recipe': recipe,
                 'tools': tool_versions, 'scripts': [file_record(p, p.relative_to(project).as_posix())
                                                    for p in scripts if p.is_file()]}
+    if localization:
+        identity['menuLocalization'] = localization
+    unchanged = tuple(name for name in ARCHIVES if not localization or name != 'sys.a')
     key = hashlib.sha256(json.dumps(identity, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
     cache = checked_path(work, 'cache/' + key)
     marker = cache / MARKER
@@ -56,7 +63,12 @@ def prepare_data(project, source, work, ffmpeg, ffprobe, *, tool_versions):
             if manifest['key'] != key or manifest['identity'] != identity:
                 raise ValueError('Cache identity mismatch')
             verify_files(cache / 'data', manifest['files'], DATA_FILES, exact=True)
-            verify_files(cache / 'data', [row for row in rows if row['path'] in ARCHIVES], ARCHIVES)
+            verify_files(cache / 'data', [row for row in rows if row['path'] in unchanged], unchanged)
+            if localization:
+                info = manifest['menuLocalization']
+                if info['identity'] != localization:
+                    raise ValueError('Localized UI identity mismatch')
+                verify_files(cache / 'data', [info['output']], ['sys.a'])
             print(f'Asset cache hit: {key[:16]} (all output hashes checked)', flush=True)
             return {'key': key, 'data': cache / 'data', 'manifest': marker, 'cacheHit': True}
         except (ValueError, OSError, KeyError, TypeError):
@@ -67,11 +79,20 @@ def prepare_data(project, source, work, ffmpeg, ffprobe, *, tool_versions):
     for name in ARCHIVES:
         shutil.copyfile(source / name, data / name)
     convert_opening(project, source, data, ffmpeg, ffprobe)
-    files = [file_record(data / name, name) for name in DATA_FILES]
     # Detect input changes during the copy, rather than attesting to mixed bytes.
     verify_files(data, [row for row in rows if row['path'] in ARCHIVES], ARCHIVES)
+    localized = None
+    if localization:
+        print('Building Chinese menu images from verified local sys.a...', flush=True)
+        localized = menu.localize(project, data / 'sys.a', pending / 'localized-sys.a')
+        os.replace(pending / 'localized-sys.a', data / 'sys.a')
+        if localized['identity'] != localization:
+            raise ValueError('Chinese UI recipe/font changed while building')
+    files = [file_record(data / name, name) for name in DATA_FILES]
     manifest = {'schema': 'tenshi-data-v1', 'key': key, 'identity': identity,
                 'vitaDirectory': 'ux0:/data/tenshi/', 'files': files}
+    if localized:
+        manifest['menuLocalization'] = localized
     write_json(pending / MARKER, manifest)
     cache.parent.mkdir(parents=True, exist_ok=True)
     if cache.exists():

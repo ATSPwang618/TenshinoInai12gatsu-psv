@@ -201,6 +201,97 @@ class AssetPipelineTest(unittest.TestCase):
             self.assertEqual((current / 'value').read_bytes(), b'new')
             self.assertEqual((backup / 'value').read_bytes(), b'old')
 
+    def test_busy_output_directory_uses_verified_backup_and_atomic_file_replacements(self):
+        _, _, release = self.modules()
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            current, staged = root / 'realease', root / 'pending'
+            for directory in (current, staged):
+                (directory / 'data').mkdir(parents=True)
+                (directory / 'data/unchanged.a').write_bytes(b'unchanged archive')
+            (current / 'data/sys.a').write_bytes(b'old UI')
+            (staged / 'data/sys.a').write_bytes(b'Chinese UI')
+            real_replace = release.os.replace
+
+            def busy_directory(src, dst):
+                if Path(src) == current:
+                    raise PermissionError('Windows directory is open')
+                return real_replace(src, dst)
+
+            with patch.object(release.os, 'replace', busy_directory):
+                backup = release.commit_directory(staged, current, root / 'backups')
+            self.assertEqual((current / 'data/sys.a').read_bytes(), b'Chinese UI')
+            self.assertEqual((backup / 'data/sys.a').read_bytes(), b'old UI')
+            self.assertEqual((backup / 'data/unchanged.a').read_bytes(), b'unchanged archive')
+            self.assertEqual((staged / 'data/sys.a').read_bytes(), b'Chinese UI')
+
+    def test_failed_busy_directory_file_update_rolls_back_all_replaced_files(self):
+        _, _, release = self.modules()
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            current, staged = root / 'realease', root / 'pending'
+            current.mkdir(); staged.mkdir()
+            for name in ('a', 'b'):
+                (current / name).write_bytes(b'old-' + name.encode())
+                (staged / name).write_bytes(b'new-' + name.encode())
+            real_replace = release.os.replace
+            failed = False
+
+            def busy_and_fail_once(src, dst):
+                nonlocal failed
+                if Path(src) == current:
+                    raise PermissionError('Windows directory is open')
+                if Path(dst) == current / 'b' and not failed:
+                    failed = True
+                    raise OSError('simulated file update failure')
+                return real_replace(src, dst)
+
+            with patch.object(release.os, 'replace', busy_and_fail_once):
+                with self.assertRaisesRegex(OSError, 'file update failure'):
+                    release.commit_directory(staged, current, root / 'backups')
+            self.assertEqual((current / 'a').read_bytes(), b'old-a')
+            self.assertEqual((current / 'b').read_bytes(), b'old-b')
+
+    def test_busy_directory_fallback_refuses_to_discard_unlisted_user_files(self):
+        _, _, release = self.modules()
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            current, staged = root / 'realease', root / 'pending'
+            current.mkdir(); staged.mkdir()
+            (current / 'save.json').write_bytes(b'user save')
+            (staged / 'sys.a').write_bytes(b'new UI')
+            with patch.object(release.os, 'replace', side_effect=PermissionError('busy')):
+                with self.assertRaisesRegex((OSError, ValueError), 'busy|file set'):
+                    release.commit_directory(staged, current, root / 'backups')
+            self.assertEqual((current / 'save.json').read_bytes(), b'user save')
+
+    def test_cancelled_busy_directory_update_restores_previous_files(self):
+        _, _, release = self.modules()
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            current, staged = root / 'realease', root / 'pending'
+            current.mkdir(); staged.mkdir()
+            for name in ('a', 'b'):
+                (current / name).write_bytes(b'old-' + name.encode())
+                (staged / name).write_bytes(b'new-' + name.encode())
+            real_replace = release.os.replace
+            cancelled = False
+
+            def cancel_second_file(src, dst):
+                nonlocal cancelled
+                if Path(src) == current:
+                    raise PermissionError('Windows directory is open')
+                if Path(dst) == current / 'b' and not cancelled:
+                    cancelled = True
+                    raise KeyboardInterrupt('cancelled by user')
+                return real_replace(src, dst)
+
+            with patch.object(release.os, 'replace', cancel_second_file):
+                with self.assertRaises(KeyboardInterrupt):
+                    release.commit_directory(staged, current, root / 'backups')
+            for name in ('a', 'b'):
+                self.assertEqual((current / name).read_bytes(), b'old-' + name.encode())
+
     def test_switching_sdk_does_not_reuse_cached_compiler_directory(self):
         from vita_asset_pipeline import build
         with tempfile.TemporaryDirectory() as temporary:

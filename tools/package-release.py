@@ -18,7 +18,7 @@ def source_archive(project, output):
                        if p.is_file() and '__pycache__' not in p.parts and p.suffix != '.pyc')
     allowed.extend(p for p in (project / 'prepare').iterdir()
                    if p.is_file() and (p.name.endswith('.cs.in') or p.suffix == '.csproj'))
-    allowed.extend(project / name for name in ('assets/opening.json', 'assets/game-data.json',
+    allowed.extend(project / name for name in ('assets/opening.json', 'assets/game-data.json', 'assets/menu-zh-cn.json',
         'assets/SourceHanSansCN-Regular.otf', 'assets/source-han-sans.json'))
     allowed.extend(p for p in project.iterdir() if p.is_file() and
                    (p.suffix == '.md' or p.name in ('LICENSE', 'CMakeLists.txt', '.gitignore',
