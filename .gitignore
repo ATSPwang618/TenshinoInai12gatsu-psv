@@ -12,6 +12,8 @@ prepare/obj/
 *.elf
 data*/
 recovery/
+# Local hardware captures are not source or redistributable release assets.
+/实机截图/
 *.velf
 __pycache__/
 *.pyc
