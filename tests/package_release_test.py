@@ -111,6 +111,20 @@ class PackageReleaseTest(unittest.TestCase):
             self.assertEqual(archive.read('assets/SourceHanSansCN-Regular.otf'),
                              self.entries['assets/SourceHanSansCN-Regular.otf'])
 
+    def test_source_archive_preserves_readme_screenshots(self):
+        screenshot = self.root / 'docs/screenshots/device-fixture.jpg'
+        screenshot.parent.mkdir(parents=True, exist_ok=True)
+        screenshot.write_bytes(b'jpeg-screenshot-fixture')
+        try:
+            result = self.run_release(self.entries)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            with zipfile.ZipFile(self.dist / 'tenshi-vita-source.zip') as archive:
+                self.assertIn('docs/screenshots/device-fixture.jpg', archive.namelist())
+                self.assertEqual(archive.read('docs/screenshots/device-fixture.jpg'),
+                                 b'jpeg-screenshot-fixture')
+        finally:
+            screenshot.unlink()
+
     def test_source_archive_excludes_misplaced_original_game_files(self):
         unwanted = self.root / 'src/voice.a'
         unwanted.write_bytes(b'commercial-resource-fixture')
