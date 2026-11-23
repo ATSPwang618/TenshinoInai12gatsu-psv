@@ -1,0 +1,71 @@
+name: Build Vita VPK
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vita-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Test and build program-only VPK
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    container:
+      # Official full hard-float SDK, channel 2026.08. Keep the digest pinned.
+      image: vitasdk/vitasdk:2026.08@sha256:6748dde0c6d455c398f028736afe41085cd3b951672ec73e167acb9b8d5d7813
+    defaults:
+      run:
+        shell: bash
+    env:
+      PYTHONUTF8: '1'
+      CI_SDK_IMAGE: vitasdk/vitasdk:2026.08@sha256:6748dde0c6d455c398f028736afe41085cd3b951672ec73e167acb9b8d5d7813
+    steps:
+      - name: Check out sources without persisting credentials
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+
+      - name: Install host test dependencies
+        run: |
+          apt-get update
+          apt-get install --no-install-recommends -y cmake make g++ git python3 python3-pil
+
+      - name: Run data-independent regression tests
+        run: python3 -m unittest discover -s tests -p '*_test.py' -v
+
+      - name: Build and validate VPK, source archive and checksums
+        run: python3 tools/build-ci.py --jobs 4
+
+      - name: Upload validated program build
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: tenshi-vita-${{ github.sha }}
+          path: |
+            dist/ci/tenshi-vita.vpk
+            dist/ci/tenshi-vita-source.zip
+            dist/ci/build-report.json
+            dist/ci/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+
+      - name: Upload build diagnostics even on failure
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: tenshi-vita-logs-${{ github.sha }}
+          path: |
+            .work/ci-build/logs/*.log
+            .work/ci-build/last-build.json
+          include-hidden-files: true
+          if-no-files-found: ignore
+          retention-days: 7

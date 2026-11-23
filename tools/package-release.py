@@ -12,7 +12,8 @@ from vita_asset_pipeline.vpk import validate_vpk
 
 def source_archive(project, output):
     allowed = []
-    for folder in ('src', 'tests', 'tools', 'vita_asset_pipeline', 'licenses', 'third_party', 'sce_sys'):
+    for folder in ('src', 'tests', 'tools', 'vita_asset_pipeline', 'licenses', 'third_party', 'sce_sys',
+                   '.github/workflows'):
         allowed.extend(p for p in (project / folder).rglob('*')
                        if p.is_file() and '__pycache__' not in p.parts and p.suffix != '.pyc')
     allowed.extend(p for p in (project / 'prepare').iterdir()
@@ -31,7 +32,8 @@ def source_archive(project, output):
                     and path.resolve().is_relative_to(project.resolve())
                     and (path.suffix.lower() in source_suffixes or path.relative_to(project).as_posix() in
                          ('assets/SourceHanSansCN-Regular.otf', 'third_party/pthread-embedded-63e1cd9.zip') or path.name in
-                         ('LICENSE', 'CMakeLists.txt', '.gitignore', '.gdignore', '.clang-format'))):
+                         ('LICENSE', 'CMakeLists.txt', '.gitignore', '.gdignore', '.clang-format') or
+                         (path.parent == project / '.github/workflows' and path.suffix in ('.yml', '.yaml')))):
                 archive.write(path, path.relative_to(project).as_posix())
     pending.replace(output)
 

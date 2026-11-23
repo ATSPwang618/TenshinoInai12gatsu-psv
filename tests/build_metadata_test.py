@@ -56,7 +56,7 @@ class BuildMetadataTest(unittest.TestCase):
                                      '-DCMAKE_TOOLCHAIN_FILE=' + str(toolchain),
                                      '-DPython3_EXECUTABLE=' + sys.executable,
                                      '-DVITASDK=' + str(root / 'sdk')],
-                                    capture_output=True, text=True, encoding='utf-8')
+                                    cwd=root, capture_output=True, text=True, encoding='utf-8')
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             args = (root / 'build/package-args.txt').read_text().split(';')
             self.assertEqual(args[:7], ['tenshi-vita.vpk', 'TNSH00001', 'eboot.bin',
