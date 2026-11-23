@@ -75,6 +75,49 @@ void trimGlyphCache(size_t count) {
 }
 std::vector<UiButtonSpec> uiButtons;
 UiScreen uiScreen = UiNone, confirmReturn = UiNone;
+UiTransition uiTransition;
+UiFeedback uiFeedback;
+Texture uiCover, uiBackdrop;
+bool uiTransitionPending = false;
+bool uiCoverIsMenu = false, uiDrawingLayer = false;
+UiScreen uiTransitionFrom = UiNone, uiTransitionTo = UiNone;
+int uiSlideX = 0, uiSlideY = 56;
+std::shared_ptr<const FrameSnapshot> lastUiFrame;
+std::string uiFeedbackText;
+bool uiInputBlocked() const {
+    return uiTransitionPending || uiTransition.active(SDL_GetTicks());
+}
+void notifyUi(const std::string &text, int selectedSlot = 0) {
+    uiFeedbackText = text;
+    uiFeedback.show(selectedSlot, SDL_GetTicks(), preferences.value("effects", true));
+}
+// SDL's transparent compositing stores premultiplied RGB; static texture uploads
+// need straight alpha. Used only once on interruption/capture, never per frame.
+static Pixels straightAlpha(Pixels image) {
+    for (size_t i = 0; i < image.rgba.size(); i += 4) {
+        const unsigned alpha = image.rgba[i + 3];
+        if (alpha && alpha != 255)
+            for (int c = 0; c < 3; c++)
+                image.rgba[i + c] = uint8_t(std::min(255u, (unsigned(image.rgba[i + c]) * 255 + alpha / 2) / alpha));
+    }
+    return image;
+}
+void captureUiTransition(int dx = 0, int dy = 56) {
+    uiSlideX = dx;
+    uiSlideY = dy;
+    uiTransitionFrom = uiTransitionTo = uiScreen;
+    if (!canvasReady || !preferences.value("effects", true)) {
+        uiTransitionPending = false;
+        uiTransition.duration = 0;
+        uiCover.reset();
+        return;
+    }
+    uiCoverIsMenu = uiScreen != UiNone && bool(lastUiFrame);
+    uiCover.load(r, uiCoverIsMenu ? straightAlpha(lastUiFrame->render()) : snapshots.last.render());
+    // Start only once the destination is ready: loading an atlas/preview must not
+    // consume the entire fade before its first frame is ever presented.
+    uiTransitionPending = true;
+}
 // Only directional navigation needs a persistent focus indicator.
 bool navigationFocus = false, pointerHeld = false;
 int pressedAction = -1, pressedValue = 0, draggedSlider = -1;
@@ -122,6 +165,22 @@ OriginalWeather snowfall;
 Pixels lastScene, transitionMask;
 std::shared_ptr<Pixels> transitionFrame;
 Texture effectCover, sceneComposite;
+struct ActorLayer {
+    std::unique_ptr<Texture> from, to;
+    ActorTween motion;
+    int code = 0, targetX = 399;
+    uint32_t drawnAt = 0;
+};
+std::array<std::unique_ptr<ActorLayer>, 3> actorLayers;
+std::string actorContext;
+bool actorsReady = false, actorsPaused = false;
+uint32_t actorsPausedAt = 0;
+void clearActorMotion() {
+    for (auto &layer : actorLayers)
+        layer.reset();
+    actorContext.clear();
+    actorsReady = actorsPaused = false;
+}
 std::string sceneKey;
 std::set<std::string> loggedStages;
 int effectId = 0, effectStep = 0, effectFrame = -1, effectLength = 0;
@@ -161,6 +220,15 @@ void setSuspended(bool value) {
         if (deadline)
             deadline += elapsed;
         effectStart += elapsed;
+        uiTransition.shift(elapsed);
+        uiFeedback.shift(elapsed);
+        if (actorsPaused)
+            actorsPausedAt += elapsed;
+        for (auto &layer : actorLayers)
+            if (layer) {
+                layer->motion.clock.shift(elapsed);
+                layer->drawnAt += elapsed;
+            }
         splashAt += elapsed;
         endingAt += elapsed;
         musicStartedAt += elapsed;
@@ -330,13 +398,16 @@ void label(const std::string &s, int x, int y, int width = 720, int size = 18, b
     SDL_Rect clip{x, y, width, size * 2 + 8}, old;
     bool clipped = SDL_RenderIsClipEnabled(r);
     SDL_RenderGetClipRect(r, &old);
+    clip = renderMotion.rect(r, clip);
     SDL_RenderSetClipRect(r, &clip);
     auto key = "label:" + s + ":" + std::to_string(size) + ":" + std::to_string(color.r) + ":" +
                std::to_string(color.g) + ":" + std::to_string(color.b);
     if (!textCache.count(key)) {
         if (textCache.size() > 180)
             textCache.clear();
-        auto *surface = TTF_RenderUTF8_Blended(f, s.c_str(), color);
+        auto opaque = color;
+        opaque.a = 255;
+        auto *surface = TTF_RenderUTF8_Blended(f, s.c_str(), opaque);
         if (surface) {
             auto t = std::make_unique<Texture>();
             t->loadSurface(r, surface);
@@ -344,12 +415,27 @@ void label(const std::string &s, int x, int y, int width = 720, int size = 18, b
             textCache[key] = std::move(t);
         }
     }
-    if (textCache.count(key))
+    if (textCache.count(key)) {
+        SDL_SetTextureAlphaMod(textCache[key]->ptr, color.a);
         textCache[key]->draw(r, x + (center ? std::max(0, (width - w) / 2) : 0), y);
+        SDL_SetTextureAlphaMod(textCache[key]->ptr, 255);
+    }
     SDL_RenderSetClipRect(r, clipped ? &old : nullptr);
 }
 // A compact pointer keeps pad navigation visible without drawing a frame around original UI art.
 void navigationPointer(SDL_Rect rect) {
+    // Frost-blue corner brackets preserve the original art instead of replacing
+    // its controls with generic widgets. Also readable over pale menu images.
+    const SDL_Color edge{184, 224, 232, 230};
+    rectangle(rect.x, rect.y, rect.w, rect.h, {184, 224, 232, 18});
+    for (int right : {0, 1})
+        for (int bottom : {0, 1}) {
+            int x = right ? rect.x + rect.w - 10 : rect.x;
+            int y = bottom ? rect.y + rect.h - 2 : rect.y;
+            rectangle(x, y, 10, 2, edge);
+            rectangle(right ? rect.x + rect.w - 2 : rect.x,
+                      bottom ? rect.y + rect.h - 10 : rect.y, 2, 10, edge);
+        }
     int x = rect.x >= 12 ? rect.x - 10 : rect.x + rect.w + 4;
     if (x + 6 > 800)
         x = rect.x + 4;
@@ -372,7 +458,7 @@ void button(const std::string &name, int frame, int hot, int x, int y, int actio
                     : enabled && hot >= 0 && (focus || over) ? hot
                                                              : frame;
     auto &t = uiTexture(name, drawFrame);
-    uint8_t tint = !enabled ? (disabled >= 0 ? 255 : 70) : (selected ? 255 : 140);
+    uint8_t tint = !enabled ? (disabled >= 0 ? 255 : 70) : down && pressed < 0 ? 205 : (selected ? 255 : 140);
     SDL_SetTextureColorMod(t.ptr, tint, tint, tint);
     t.draw(r, x, y);
     SDL_SetTextureColorMod(t.ptr, 255, 255, 255);
@@ -381,6 +467,24 @@ void button(const std::string &name, int frame, int hot, int x, int y, int actio
     uiButtons.push_back({rect, action, value, enabled, name});
 }
 void showUi(UiScreen next) {
+    if (uiScreen == UiNone && next != UiNone && !actorsPaused) {
+        actorsPaused = true;
+        actorsPausedAt = SDL_GetTicks();
+    } else if (next == UiNone && actorsPaused) {
+        const uint32_t elapsed = SDL_GetTicks() - actorsPausedAt;
+        for (auto &layer : actorLayers)
+            if (layer) {
+                layer->motion.clock.shift(elapsed);
+                layer->drawnAt += elapsed;
+            }
+        actorsPaused = false;
+    }
+    if (next != uiScreen) {
+        captureUiTransition();
+        uiTransitionTo = next;
+        if (uiScreen == UiNone && next != UiNone && canvasReady)
+            uiBackdrop.load(r, menuBackdrop(snapshots.last.render()));
+    }
     pointerHeld = false;
     pressedAction = draggedSlider = -1;
     uiScreen = next;
@@ -479,6 +583,166 @@ void drawSceneBase(const Json &v) {
     }
     sceneComposite.draw(r, 0, 0);
 }
+std::string actorFile(int code) {
+    return vm->metadata().at("characters").at(((code >> 8) & 15) * 2).get<std::string>() +
+           number((code & 15) * 100 + ((code >> 4) & 15)) + ".px";
+}
+std::unique_ptr<Texture> actorTexture(int code, int toneValue) {
+    if (!code)
+        return {};
+    const auto file = actorFile(code);
+    Pixels pixels = decodedImage("char.a/" + file, [&] { return pxStandalone(asset("char.a").read(file)); });
+    sceneTone(pixels, toneValue);
+    auto result = std::make_unique<Texture>();
+    result->load(r, std::move(pixels));
+    return result;
+}
+Pixels captureActor(const ActorLayer &layer, uint32_t now) {
+    const auto pose = layer.motion.sample(now);
+    struct Part { const Texture *texture; int x, y; uint8_t alpha; };
+    std::vector<Part> parts;
+    auto add = [&](const std::unique_ptr<Texture> &texture, int offset, uint8_t alpha) {
+        if (texture && alpha)
+            parts.push_back({texture.get(), int(std::lround(pose.x)) + texture->originX + offset,
+                             599 + texture->originY, alpha});
+    };
+    add(layer.from, pose.oldOffset, pose.oldAlpha);
+    add(layer.to, pose.newOffset, pose.newAlpha);
+    if (parts.empty())
+        return Pixels();
+    int left = 800, top = 600, right = 0, bottom = 0;
+    for (const auto &part : parts) {
+        left = std::min(left, part.x);
+        top = std::min(top, part.y);
+        right = std::max(right, part.x + part.texture->w);
+        bottom = std::max(bottom, part.y + part.texture->h);
+    }
+    // Only visible pixels can contribute to the next frame. Bound interrupted
+    // composites so repeated changes cannot accumulate offscreen padding.
+    left = std::max(left, 0);
+    top = std::max(top, 0);
+    right = std::min(right, 800);
+    bottom = std::min(bottom, 600);
+    if (left >= right || top >= bottom)
+        return Pixels();
+    FrameSnapshot frame(right - left, bottom - top, {0, 0, 0, 0});
+    const SDL_Rect clip{0, 0, right - left, bottom - top};
+    for (const auto &part : parts)
+        frame.texture(part.texture->pixels,
+                      {part.x - left, part.y - top, part.texture->w, part.texture->h}, clip,
+                      {255, 255, 255, part.alpha}, SDL_BLENDMODE_BLEND);
+    auto result = straightAlpha(frame.render());
+    result.x = left - int(std::lround(pose.x));
+    result.y = top - 599;
+    return result;
+}
+void drawLiveScene(const Json &v) {
+    const auto context = Json::array({v.at("background"), v.at("full"), v.value("tone", 0)}).dump();
+    bool enabled = actorsReady && actorContext == context && preferences.value("effects", true) &&
+                   !skipMode && !heldSkip && !effectId;
+    if (!actorsReady || actorContext != context)
+        clearActorMotion();
+    actorContext = context;
+    actorsReady = true;
+    const uint32_t now = actorsPaused ? actorsPausedAt : SDL_GetTicks();
+    std::array<int, 3> codes{}, centers{150, 400, 650};
+    int count = v.value("full", false) ? 0 : std::clamp(v.value("count", 0), 0, 3);
+    if (count == 1)
+        centers[0] = 399;
+    else if (count == 2)
+        centers = {209, 589, 650};
+    for (int i = 0; i < count; i++)
+        codes[i] = v.at("characters").at(i);
+    // Follow identity across slot compaction (e.g. right actor moves to center on exit).
+    auto previous = std::move(actorLayers);
+    for (int i = 0; i < 3; i++)
+        if (codes[i])
+            for (auto &old : previous)
+                if (old && old->code && (old->code & 0xf00) == (codes[i] & 0xf00)) {
+                    actorLayers[i] = std::move(old);
+                    break;
+                }
+    for (int i = 0; i < 3; i++)
+        if (!actorLayers[i]) {
+            for (auto &old : previous)
+                if (old) {
+                    actorLayers[i] = std::move(old);
+                    break;
+                }
+            if (!actorLayers[i])
+                actorLayers[i] = std::make_unique<ActorLayer>();
+        }
+    std::vector<ActorLayer *> changed;
+    for (int i = 0; i < 3; i++) {
+        auto &layer = *actorLayers[i];
+        const bool sameTarget = layer.code == codes[i] && (!codes[i] || layer.targetX == centers[i]);
+        if (sameTarget && (enabled || !layer.motion.clock.active(now)))
+            continue;
+        const bool sameActor = layer.code && codes[i] && (layer.code & 0xf00) == (codes[i] & 0xf00);
+        const bool interrupted = layer.motion.clock.active(layer.drawnAt);
+        const bool imageChanged = layer.code != codes[i] || interrupted;
+        // Continue the last presented pose, not an unseen future pose sampled
+        // after disk access/decoding. A fresh entrant starts at its own station.
+        const auto visible = layer.motion.sample(layer.drawnAt);
+        const bool hasVisible = (layer.from && visible.oldAlpha) || (layer.to && visible.newAlpha);
+        const float fromX = hasVisible ? visible.x : codes[i] ? float(centers[i]) : visible.x;
+        if (enabled && imageChanged) {
+            if (interrupted) {
+                auto frozen = captureActor(layer, layer.drawnAt);
+                layer.from.reset();
+                if (frozen.w && frozen.h) {
+                    layer.from = std::make_unique<Texture>();
+                    layer.from->load(r, std::move(frozen));
+                }
+            } else
+                layer.from = std::move(layer.to);
+        } else
+            layer.from.reset();
+        if (!sameTarget || !enabled)
+            layer.to = actorTexture(codes[i], v.value("tone", 0));
+        layer.motion.begin(now, fromX, codes[i] ? centers[i] : fromX,
+                           bool(layer.from), bool(layer.to), sameActor, imageChanged, enabled);
+        layer.code = codes[i];
+        layer.targetX = codes[i] ? centers[i] : int(std::lround(fromX));
+        changed.push_back(&layer);
+    }
+    // Decoding three new sprites must not consume their visible entrance time.
+    const uint32_t ready = actorsPaused ? actorsPausedAt : SDL_GetTicks();
+    for (auto *layer : changed)
+        layer->motion.clock.start = ready;
+    bool moving = false;
+    for (auto &layer : actorLayers) {
+        layer->drawnAt = ready;
+        moving = moving || layer->motion.clock.active(ready);
+    }
+    if (!moving) {
+        for (auto &layer : actorLayers)
+            layer->from.reset();
+        // Preserve the original whole-scene tone arithmetic at rest, including
+        // nonlinear tones on translucent sprite edges.
+        drawSceneBase(v);
+        return;
+    }
+    Json base = v;
+    base["characters"] = {0, 0, 0};
+    base["count"] = 0;
+    drawSceneBase(base);
+    for (auto &owned : actorLayers) {
+        auto &layer = *owned;
+        const auto pose = layer.motion.sample(ready);
+        auto drawActor = [&](std::unique_ptr<Texture> &texture, int offset, uint8_t alpha) {
+            if (texture && alpha) {
+                SDL_SetTextureAlphaMod(texture->ptr, alpha);
+                texture->draw(r, int(std::lround(pose.x)) + texture->originX + offset, 599 + texture->originY);
+                SDL_SetTextureAlphaMod(texture->ptr, 255);
+            }
+        };
+        drawActor(layer.from, pose.oldOffset, pose.oldAlpha);
+        drawActor(layer.to, pose.newOffset, pose.newAlpha);
+        if (!layer.motion.clock.active(ready))
+            layer.from.reset();
+    }
+}
 void drawMessage(const NativeMessageLayout &layout, int at, float distance, int ox, int oy, bool smooth) {
     if (at < 0 || at >= int(layout.pages.size()))
         return;
@@ -487,6 +751,7 @@ void drawMessage(const NativeMessageLayout &layout, int at, float distance, int 
     SDL_Rect clip{ox, oy, layout.full ? 654 : 494, layout.full ? 520 : 90}, old;
     bool clipped = SDL_RenderIsClipEnabled(r);
     SDL_RenderGetClipRect(r, &old);
+    clip = renderMotion.rect(r, clip);
     SDL_RenderSetClipRect(r, &clip);
     for (const auto &g : layout.pages[at]) {
         float opacity = g.advance > 0 ? std::clamp((distance - g.offset) / g.advance, 0.f, 1.f) : 1;
@@ -580,7 +845,12 @@ void drawClock() {
     digits(t.tm_mday, 29, 12);
 }
 void backdrop() {
-    rectangle(0, 0, 800, 600, {0, 0, 0, 115});
+    if (uiDrawingLayer) {
+        // The frozen background belongs to the stationary scene, not the sliding menu.
+    } else if (uiBackdrop.ptr)
+        uiBackdrop.draw(r, 0, 0);
+    else
+        rectangle(0, 0, 800, 600, {0, 0, 0, 115});
     uiImage("system.px", 40, 0, 0);
     uiImage("system.px", 41, 0, 544);
 }
@@ -701,9 +971,11 @@ void saveUi() {
         int n = savePage * 8 + i + 1, x = 64 + i / 4 * 370, y = 81 + i % 4 * 114;
         auto record = slotInfo(n);
         button("saveload.px", 1, -1, x, y, 4, n, !loadingSlots || !record.is_null());
+        if (uiFeedback.slot == n && uiFeedback.alpha(SDL_GetTicks()))
+            rectangle(x, y, 346, 104, {184, 224, 232, uint8_t(uiFeedback.alpha(SDL_GetTicks()) / 5)});
         label(number(n, 2), x + 6, y + 5, 60, 16);
         if (record.is_null())
-            label("NO DATA", x + 16, y + 40, 200);
+            label("空存档", x + 16, y + 40, 200, 18, false, {205, 215, 221, 255});
         else {
             auto &v = record.at("visual");
             if (!previews.count(n)) {
@@ -741,6 +1013,9 @@ void saveUi() {
     }
     for (int i = 0; i < 5; i++)
         button("saveload.px", 4 + i * 2 + (i == savePage ? 1 : 0), -1, 22, 320 + i * 40, 5, i);
+    label(std::string(loadingSlots ? "读取存档" : "保存进度") + "   " + std::to_string(savePage + 1) +
+              " / 5", 24, 547, 230, 16);
+    label("方向键选择   × 确认   ○ 返回 / 轻触槽位", 282, 548, 490, 15);
 }
 void historyUi() {
     if (historyScenes.empty()) {
@@ -827,6 +1102,7 @@ bool heldSkip = false;
 std::map<int, TTF_Font *> alternateFonts;
 bool usingFullFont = false;
 void returnTitle() {
+    clearActorMotion();
     effectId = 0;
     deadline = 0;
     ending = false;
@@ -916,6 +1192,8 @@ void dispatch(int a, int v = 0) {
         showUi(UiName);
         break;
     case 2:
+        if (uiScreen == UiSettings && settingsTab != v)
+            captureUiTransition(v > settingsTab ? 72 : -72, 0);
         settingsTab = v;
         showUi(UiSettings);
         break;
@@ -936,6 +1214,8 @@ void dispatch(int a, int v = 0) {
         }
         break;
     case 5:
+        if (savePage != v)
+            captureUiTransition(v > savePage ? 72 : -72, 0);
         savePage = v;
         uiFocus = 0;
         previews.clear();
@@ -1109,10 +1389,8 @@ void dispatch(int a, int v = 0) {
         break;
     }
     case 64:
-        if (confirmReturn == UiName)
-            showUi(UiName);
-        else
-            closeUi();
+        // Cancel returns to the page that asked, not all the way out to the story.
+        showUi(confirmReturn);
         break;
     case 70:
         writeState("player.json", {{"surname", surname}, {"given", given}});
@@ -1149,14 +1427,30 @@ void goBack() {
         SDL_StopTextInput();
         return;
     }
-    if (uiScreen == UiConfirm && confirmReturn == UiName) {
-        showUi(UiName);
+    if (uiScreen == UiConfirm) {
+        showUi(confirmReturn);
         return;
     }
 
     closeUi();
 }
+bool keyboardShortcut(SDL_Keycode key) {
+    if (key != SDLK_v && key != SDLK_F5 && key != SDLK_F9)
+        return false;
+    if (uiInputBlocked() || uiScreen != UiNone || !inGame)
+        return true;
+    if (key == SDLK_v) {
+        if (!visual.at("voice").get<std::string>().empty()) {
+            playVoice(visual.at("voice"));
+            messageTimer = 0;
+        }
+    } else
+        dispatch(3, key == SDLK_F9 ? 1 : 0);
+    return true;
+}
 void pointer(int x, int y) {
+    if (uiInputBlocked())
+        return;
     navigationFocus = false;
     if (!fatal.empty() || splash || movie.active() || ending) {
         action(1);
@@ -1180,6 +1474,8 @@ void pointer(int x, int y) {
         action(1);
 }
 void dragSlider(int x) {
+    if (uiInputBlocked())
+        return;
     if (draggedSlider < 0)
         return;
     int count = draggedSlider < 2 ? 10 : 20;
@@ -1188,6 +1484,8 @@ void dragSlider(int x) {
     changeSlider(draggedSlider, 0, value - (draggedSlider < 2 ? 1 : 0));
 }
 void pointerDown(int x, int y) {
+    if (uiInputBlocked())
+        return;
     navigationFocus = false;
     if (pointerHeld)
         return;
@@ -1219,7 +1517,7 @@ void pointerUp(int x, int y) {
     pointerHeld = false;
     pressedAction = draggedSlider = -1;
     SDL_Point point{x, y};
-    if (held && a >= 0 && uiScreen == pressedScreen && SDL_PointInRect(&point, &pressedRect))
+    if (!uiInputBlocked() && held && a >= 0 && uiScreen == pressedScreen && SDL_PointInRect(&point, &pressedRect))
         dispatch(a, v);
 }
 bool touchPressed = false;
@@ -1306,6 +1604,8 @@ bool pointerEvent(const SDL_Event &e, bool frontOnly = frontTouchOnly) {
         return true;
     }
     if (e.type == SDL_MOUSEWHEEL) {
+        if (uiInputBlocked())
+            return true;
         if (e.wheel.y == 0)
             return true;
         if (uiScreen == UiHistory)
@@ -1325,6 +1625,8 @@ bool pointerEvent(const SDL_Event &e, bool frontOnly = frontTouchOnly) {
     return false;
 }
 void inputName(const std::string &value, bool backspace) {
+    if (uiInputBlocked())
+        return;
     if (nameField < 0)
         return;
     auto &s = nameField ? given : surname;
@@ -1340,6 +1642,8 @@ void inputName(const std::string &value, bool backspace) {
     textCache.clear();
 }
 void originalAction(int a) {
+    if (uiInputBlocked())
+        return;
     if (a == 3 || a == 4 || a == 7 || a == 8)
         navigationFocus = true;
     if (splash) {
@@ -1562,7 +1866,7 @@ void drawPresentation() {
                            i != 1 || haveSaveSlots);
             }
         } else {
-            drawSceneBase(visual);
+            drawLiveScene(visual);
             drawWeather();
             if (!hidden) {
                 dialogueUi(visual, message, page, revealed, uiScreen == UiNone);
@@ -1587,6 +1891,33 @@ void drawPresentation() {
         }
         if (uiScreen != UiNone)
             uiButtons.clear();
+        const uint32_t motionNow = SDL_GetTicks();
+        const float motionProgress = uiTransitionPending ? 0.f : uiTransition.progress(motionNow);
+        const uint8_t oldAlpha = uint8_t(std::lround(255 * (1 - motionProgress)));
+        if (uiBackdrop.ptr) {
+            uint8_t alpha = 255;
+            if (uiTransitionTo == UiNone)
+                alpha = oldAlpha;
+            else if (uiTransitionFrom == UiNone)
+                alpha = uint8_t(255 - oldAlpha);
+            SDL_SetTextureAlphaMod(uiBackdrop.ptr, alpha);
+            uiBackdrop.draw(r, 0, 0);
+            SDL_SetTextureAlphaMod(uiBackdrop.ptr, 255);
+        }
+        if ((uiTransitionPending || uiTransition.active(motionNow)) && uiCover.ptr) {
+            SDL_SetTextureAlphaMod(uiCover.ptr, oldAlpha);
+            const int x = uiCoverIsMenu ? -int(std::lround(uiSlideX * motionProgress)) : 0;
+            const int y = uiCoverIsMenu ? -int(std::lround(uiSlideY * motionProgress)) : 0;
+            uiCover.draw(r, x, y);
+            SDL_SetTextureAlphaMod(uiCover.ptr, 255);
+        }
+        const bool menuLayer = uiScreen != UiNone;
+        if (menuLayer) {
+            snapshots.begin(canvas.ptr, {0, 0, 0, 0});
+            uiDrawingLayer = true;
+            renderMotion = {canvas.ptr, int(std::lround(uiSlideX * (1 - motionProgress))),
+                            int(std::lround(uiSlideY * (1 - motionProgress))), uint8_t(255 - oldAlpha)};
+        }
         switch (uiScreen) {
         case UiSettings:
             settingsUi();
@@ -1608,9 +1939,30 @@ void drawPresentation() {
                 galleryUi();
             break;
         }
+        renderMotion = {};
+        uiDrawingLayer = false;
+        if (menuLayer)
+            lastUiFrame = snapshots.finishOverlay();
         if (!notice.empty()) {
             rectangle(20, 12, 760, 30, {0, 0, 0, 225});
             label(notice, 28, 15, 742, 17);
+        }
+    }
+    const uint32_t uiNow = SDL_GetTicks();
+    if (uint8_t alpha = uiFeedback.alpha(uiNow)) {
+        rectangle(234, 50, 332, 28, {42, 61, 79, uint8_t(alpha * 235 / 255)});
+        rectangle(234, 76, 332, 2, {184, 224, 232, alpha});
+        label(uiFeedbackText, 246, 54, 308, 18, true, {237, 246, 248, alpha});
+    }
+    if (uiTransitionPending) {
+        uiTransition.begin(uiNow, preferences.value("effects", true));
+        uiTransitionPending = false;
+    }
+    if (!uiTransition.active(uiNow)) {
+        uiCover.reset();
+        if (uiScreen == UiNone) {
+            uiBackdrop.reset();
+            lastUiFrame.reset();
         }
     }
     snapshots.finish();
@@ -1698,7 +2050,7 @@ void tickPresentation() {
         endingTextures.clear();
         returnTitle();
     }
-    if (!fatal.empty() || !inGame || menu || uiScreen != UiNone || ending || movie.active())
+    if (!fatal.empty() || !inGame || menu || uiScreen != UiNone || uiInputBlocked() || ending || movie.active())
         return;
     if (preferences.value("effects", true) && preferences.value("particles", true))
         snowfall.tick(delta);
@@ -1785,8 +2137,24 @@ void verifyUi() {
     };
     int screens = 0;
     std::set<uint64_t> hashes;
-    auto check = [&]() {
+    auto settleUi = [&]() {
         draw();
+        uiTransition.start = SDL_GetTicks() - uiTransition.duration;
+        draw();
+    };
+    auto captureUi = [&](const std::string &name) {
+#ifndef __vita__
+        Pixels out = snapshots.last.render();
+        auto *surface = SDL_CreateRGBSurfaceWithFormatFrom(out.rgba.data(), out.w, out.h, 32,
+                                                          out.w * 4, SDL_PIXELFORMAT_RGBA32);
+        require(surface != nullptr, "UI screenshot surface");
+        int status = IMG_SavePNG(surface, (stateRoot + "/" + name + ".png").c_str());
+        SDL_FreeSurface(surface);
+        require(status == 0, "UI screenshot write");
+#endif
+    };
+    auto check = [&]() {
+        settleUi();
         require(!uiButtons.empty(), "Screen has no buttons");
         for (const auto &b : uiButtons)
             require(b.rect.x >= 0 && b.rect.y >= 0 && b.rect.x + b.rect.w <= 800 &&
@@ -1797,6 +2165,7 @@ void verifyUi() {
         for (auto byte : out.rgba)
             hash = (hash ^ byte) * 1099511628211ull;
         hashes.insert(hash);
+        captureUi("ui-" + std::to_string(screens));
         screens++;
     };
     introSeen = true;
@@ -1804,6 +2173,7 @@ void verifyUi() {
     showUi(UiNone);
     check();
     require(uiButtons.size() == 5, "Title controls");
+#include "../tests/ui_polish_checks.inc"
     dispatch(1);
     check();
     dispatch(60, 0);
@@ -1815,6 +2185,7 @@ void verifyUi() {
     check();
     dispatch(64);
     closeUi();
+    settleUi();
     for (int i = 0; i < 4; i++) {
         dispatch(2, i);
         check();
@@ -1824,6 +2195,7 @@ void verifyUi() {
     require(preferences.at("music") == volumeBefore - 1, "Volume slider");
     changeSlider(3, 1);
     closeUi();
+    settleUi();
     resetStory();
     visual["background"] = 1;
     visual["speaker"] = 0;
@@ -1835,10 +2207,31 @@ void verifyUi() {
     messageEvent["text"] = visual.at("text");
     captureDialogueAnchor();
     draw();
+#include "../tests/character_motion_checks.inc"
     for (int n : {1, 8, 9, 16, 17, 24, 25, 32, 33, 40}) {
         slot = n;
         saveGame();
     }
+    uiFeedback.duration = 0;
+    dispatch(3, 0);
+    settleUi();
+    navigationFocus = true;
+    uiFocus = 0;
+    draw();
+    captureUi("save-focus");
+    notifyUi("已保存至存档 01", 1);
+    uiFeedback.start = SDL_GetTicks() - 200;
+    draw();
+    captureUi("save-feedback");
+    uiFeedback.duration = 0;
+    navigationFocus = false;
+    closeUi();
+    settleUi();
+    dispatch(2, 2);
+    settleUi();
+    captureUi("story-settings");
+    closeUi();
+    settleUi();
     dispatch(3, 1);
     for (int i = 0; i < 5; i++) {
         dispatch(5, i);

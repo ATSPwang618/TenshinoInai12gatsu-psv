@@ -23,6 +23,9 @@ class FrameSnapshot {
   public:
     FrameSnapshot(int w = 800, int h = 600, SDL_Color clear = {8, 12, 20, 255})
         : width(w), height(h), clearColor(clear) {}
+    void append(const FrameSnapshot &frame) {
+        draws.insert(draws.end(), frame.draws.begin(), frame.draws.end());
+    }
     void texture(std::shared_ptr<const Pixels> source, SDL_Rect destination, SDL_Rect clip,
                  SDL_Color modulation, SDL_BlendMode blend) {
         if (!source)
@@ -142,8 +145,15 @@ class SnapshotRecorder {
 
   public:
     FrameSnapshot last;
-    void begin(SDL_Texture *target) {
-        sessions.push_back({target, {}});
+    void begin(SDL_Texture *target, SDL_Color clear = {8, 12, 20, 255}) {
+        sessions.push_back({target, FrameSnapshot(800, 600, clear)});
+    }
+    // Overlay draw lists are flattened into the parent, not rasterized as a nested
+    // transparent target (which would multiply edge alpha twice).
+    std::shared_ptr<const FrameSnapshot> finishOverlay() {
+        auto frame = finishNestedFrame();
+        sessions.back().frame.append(*frame);
+        return frame;
     }
     void finish() {
         if (sessions.empty())

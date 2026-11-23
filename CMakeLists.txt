@@ -72,7 +72,7 @@ else()
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
       "${CMAKE_CURRENT_SOURCE_DIR}/assets/SourceHanSansCN-Regular.otf"
       "$<TARGET_FILE_DIR:tenshi>/assets/SourceHanSansCN-Regular.otf")
-  foreach(test IN ITEMS runtime_test coverage_test media_test archive_audio_test voice_decoder_test prefetched_audio_test audio_loading_test presentation_test replay_test snapshot_test startup_test message_bytes_test logo_test movie_vita_test movie_index_test)
+  foreach(test IN ITEMS runtime_test coverage_test media_test archive_audio_test voice_decoder_test prefetched_audio_test audio_loading_test presentation_test replay_test snapshot_test startup_test message_bytes_test logo_test movie_vita_test movie_index_test ui_motion_test)
     add_executable(${test} tests/${test}.cpp)
     target_include_directories(${test} PRIVATE src)
   endforeach()

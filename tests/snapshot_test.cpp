@@ -67,6 +67,23 @@ int main() {
             throw std::runtime_error("Snapshot lost its source after cache eviction");
         if (snapshot.render().rgba != actual.rgba)
             throw std::runtime_error("Snapshot mutated after releasing texture source");
+        SnapshotRecorder recorder;
+        recorder.begin(nullptr);
+        recorder.begin(nullptr, {0, 0, 0, 0});
+        recorder.fill(renderer, {4, 8, 12, 12}, {200, 100, 40, 128});
+        auto overlay = recorder.finishOverlay();
+        recorder.finish();
+        const auto flattened = recorder.last.render();
+        const auto transparent = overlay->render();
+        const size_t point = (8 * 800 + 4) * 4;
+        if (flattened.rgba[point] != (200 * 128 + 8 * 127) / 255 ||
+            flattened.rgba[point + 3] != 255 || transparent.rgba[point + 3] != 128)
+            throw std::runtime_error("Overlay alpha was multiplied twice or clear leaked into parent");
+        bool rejected = false;
+        try { recorder.finishOverlay(); }
+        catch (const std::runtime_error &) { rejected = true; }
+        if (!rejected)
+            throw std::runtime_error("Overlay recorder did not balance its session stack");
         std::cout << "Snapshot regression passed: clip, scaling, color/alpha modulation, blends, source "
                      "lifetime; max channel difference "
                   << worst << "\n";

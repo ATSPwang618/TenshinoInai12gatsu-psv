@@ -4,6 +4,8 @@
 #include "media.hpp"
 #include "presentation.hpp"
 #include "runtime.hpp"
+#include "ui_motion.hpp"
+#include "actor_motion.hpp"
 #include "weather.hpp"
 #include <SDL.h>
 #include <SDL_image.h>
@@ -44,6 +46,21 @@ static std::string replaceAll(std::string s, const std::string &a, const std::st
     return s;
 }
 static SnapshotRecorder snapshots;
+struct RenderMotion {
+    SDL_Texture *target = nullptr;
+    int x = 0, y = 0;
+    uint8_t alpha = 255;
+    bool applies(SDL_Renderer *renderer) const {
+        return target && target == SDL_GetRenderTarget(renderer);
+    }
+    SDL_Rect rect(SDL_Renderer *renderer, SDL_Rect value) const {
+        if (applies(renderer)) {
+            value.x += x;
+            value.y += y;
+        }
+        return value;
+    }
+} renderMotion;
 struct Texture {
     // CPU copy for snapshots. Shared, never mutated through this pointer; callers that pass an rvalue
     // or a shared buffer avoid a full-image copy (1.9 MB per 800x600 upload).
@@ -111,8 +128,14 @@ struct Texture {
     void draw(SDL_Renderer *r, int x, int y, int width = 0, int height = 0) {
         if (ptr) {
             SDL_Rect dst{x, y, width ? width : w, height ? height : h};
+            dst = renderMotion.rect(r, dst);
+            uint8_t alpha = 255;
+            SDL_GetTextureAlphaMod(ptr, &alpha);
+            if (renderMotion.applies(r))
+                SDL_SetTextureAlphaMod(ptr, uint8_t(unsigned(alpha) * renderMotion.alpha / 255));
             snapshots.texture(r, ptr, pixels, dst, nested);
             SDL_RenderCopy(r, ptr, nullptr, &dst);
+            SDL_SetTextureAlphaMod(ptr, alpha);
         }
     }
 };
@@ -238,8 +261,10 @@ class App {
                    {"tone", 0}};
 #include "interface.inc"
     void rectangle(int x, int y, int w, int h, SDL_Color c) {
+        if (renderMotion.applies(r))
+            c.a = uint8_t(unsigned(c.a) * renderMotion.alpha / 255);
         SDL_SetRenderDrawColor(r, c.r, c.g, c.b, c.a);
-        SDL_Rect q{x, y, w, h};
+        SDL_Rect q = renderMotion.rect(r, {x, y, w, h});
         SDL_RenderFillRect(r, &q);
         snapshots.fill(r, q, c);
     }
@@ -920,6 +945,7 @@ class App {
         haveSaveSlots = true;
         persistUi();
         notice.clear();
+        notifyUi("已保存至存档 " + number(slot, 2), slot);
     }
     void loadGame() {
         auto p = savePath();
@@ -972,6 +998,7 @@ class App {
             endingTextures.clear();
             vm = std::move(candidate);
             visual = data.at("visual");
+            clearActorMotion();
             surname = restoredSurname;
             given = restoredGiven;
             effectId = 0;
@@ -1015,12 +1042,14 @@ class App {
             }
             captureDialogueAnchor();
             notice = "";
+            notifyUi("已读取存档 " + number(slot, 2));
         } catch (const std::exception &error) {
             notice = "存档无法读取，请选择其他槽位";
             fprintf(stderr, "Save load rejected: %s\n", error.what());
         }
     }
     void resetStory() {
+        clearActorMotion();
         showUi(UiNone);
         autoMode = skipMode = false;
         skipTimer = 0;
@@ -1175,6 +1204,10 @@ class App {
         uiCache.clear();
         glyphCache.clear();
         previews.clear();
+        uiCover.reset();
+        uiBackdrop.reset();
+        lastUiFrame.reset();
+        clearActorMotion();
         effectCover.reset();
         sceneComposite.reset();
         canvas.reset();
@@ -1342,6 +1375,8 @@ class App {
                         continue;
                     }
                     if (e.type == SDL_KEYDOWN && !e.key.repeat) {
+                        if (keyboardShortcut(e.key.keysym.sym))
+                            continue;
                         switch (e.key.keysym.sym) {
                         case SDLK_RETURN:
                         case SDLK_SPACE:
@@ -1381,21 +1416,6 @@ class App {
                         case SDLK_h:
                             if (uiScreen == UiNone)
                                 action(2);
-                            break;
-                        case SDLK_v:
-                            if (uiScreen == UiNone && inGame &&
-                                !visual.at("voice").get<std::string>().empty()) {
-                                playVoice(visual.at("voice"));
-                                messageTimer = 0;
-                            }
-                            break;
-                        case SDLK_F5:
-                            if (uiScreen == UiNone && inGame)
-                                dispatch(3, 0);
-                            break;
-                        case SDLK_F9:
-                            if (uiScreen == UiNone && inGame)
-                                dispatch(3, 1);
                             break;
                         default:
                             break;

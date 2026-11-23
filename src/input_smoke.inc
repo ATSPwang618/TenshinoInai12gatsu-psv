@@ -6,6 +6,11 @@ void verifyInput() {
             throw std::runtime_error(label);
     };
     int events = 0;
+    auto settleUi = [&]() {
+        draw();
+        uiTransition.start = SDL_GetTicks() - uiTransition.duration;
+        draw();
+    };
     SDL_FlushEvents(SDL_FIRSTEVENT, SDL_LASTEVENT);
     auto send = [&](SDL_Event e) {
         require(SDL_PushEvent(&e) == 1, "Input event could not be queued");
@@ -49,7 +54,7 @@ void verifyInput() {
         send(e);
     };
     auto findButton = [&](int action, int value = 0) {
-        draw();
+        settleUi();
         for (const auto &b : uiButtons)
             if (b.enabled && b.action == action && b.value == value)
                 return b.rect;
@@ -155,6 +160,7 @@ void verifyInput() {
     tapButton(5, 4);
     require(savePage == 4, "Save page button ignored touch");
     require(!navigationFocus, "Page button kept a navigation pointer after touch");
+    settleUi();
     // Rendering a button without a hot frame must not depend on uiFocus in pointer mode.
     draw();
     auto pointerPage = snapshots.last.render().rgba;
@@ -184,7 +190,7 @@ void verifyInput() {
     messageWaiting = true;
     deadline = 0;
     effectId = 0;
-    draw();
+    settleUi();
     tap(400, 400);
     require(revealed == message.length(page), "Story touch did not reveal the current page");
     autoMode = false;
