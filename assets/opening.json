@@ -3,8 +3,8 @@
   "sourceSha256": "b51b766b9da4c5f83280bf5a532da89c451aa54a009245650de9230c9aea6cc8",
   "sourceBytes": 65251332,
   "outputFile": "opening.mp4",
-  "outputSha256": "209938e0bcc7790f2a655b9079c67e1859f14581a3faa5305d7fb010a9ee8278",
-  "outputBytes": 34911593,
+  "outputSha256": "c97f83619bdaf77069c37d9b5b14b2cb9b0d5d08fea697af44132eb9d7c53f58",
+  "outputBytes": 34881499,
   "video": {
     "codec_name": "h264",
     "profile": "Main",
@@ -24,7 +24,7 @@
     "duration": "89.835011"
   },
   "duration": "89.835011",
-  "rights": "Game opening converted and bundled at user request; not licensed under project MIT or font OFL.",
+  "rights": "Game opening converted for the user's external data directory; not included in the program VPK and not licensed under project MIT or font OFL.",
   "conversion": [
     "-map",
     "0:v:0",
@@ -71,7 +71,7 @@
   ],
   "packetIndex": {
     "file": "opening.idx",
-    "sha256": "84721da35c9a4d4564a2f9fc693ed3b9c2d17cde5e0d50e579b74d2b842b8b2c",
+    "sha256": "d93fc79946999ba421d16222840cf2eee4953b42f815249981663212579a2b8c",
     "bytes": 131403,
     "videoPackets": 2695,
     "audioPackets": 3870,
@@ -80,5 +80,6 @@
     "referenceFrames": 2,
     "audioSamples": 3961724,
     "format": "TNSMP401; AVCC length=4; video PTS 90 kHz; audio PTS 44.1 kHz"
-  }
+  },
+  "encoderVersion": "ffmpeg version 8.0-full_build-www.gyan.dev Copyright (c) 2000-2025 the FFmpeg developers"
 }

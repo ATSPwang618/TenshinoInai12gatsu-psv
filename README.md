@@ -1,4 +1,7 @@
 # Tenshi Vita（天使不在的十二月 PSV 移植）
+
+应用显示名称：**December When There Is No Angel**。构建时包含 `sce_sys/` 中的气泡图标、启动图、LiveArea 和说明书；应用 ID、安装包文件名与资源／存档路径保持不变。
+
 ## 下载与安装
 - [下载固定名称安装包 tenshi-vita.vpk](https://github.com/dorakyuraduang/TenshinoInai12gatsu-psv/releases/download/v0.27/tenshi-vita.vpk)
 - [查看全部发布文件及版本说明](https://github.com/dorakyuraduang/TenshinoInai12gatsu-psv/releases/tag/v0.27)
@@ -15,8 +18,10 @@ ux0:/data/tenshi/
   music.a
   se.a
   ed.a
+  opening.mp4
+  opening.idx
 ```
-中文字体与片头已内置；其余原始游戏资源需自行提供。Vita3K 中应复制到其 `pref-path` 下的 `ux0/data/tenshi/`，具体定位见安装说明。
+本地构建版只内置中文字体、程序和气泡资源。片头 MP4 与同次转换生成的索引放在外置数据目录，不打进 VPK；不能用原始 `openning.v` 直接替代。`realease/data/` 是本机整理好的数据包，把其中的内容复制到上述目录，不要多套一层 `data`。Vita3K 中应复制到其 `pref-path` 下的 `ux0/data/tenshi/`，具体定位见安装说明。上方链接指向上游历史发布包，不代表本机新构建。
 ## 游玩与保存
 
 | 操作 | 功能 |

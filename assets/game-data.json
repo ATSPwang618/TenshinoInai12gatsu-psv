@@ -1,0 +1,15 @@
+{
+  "schema": "tenshi-source-v1",
+  "description": "Pinned local PC data version; hashes only, no commercial payloads.",
+  "files": [
+    {"path": "char.a", "bytes": 43498549, "sha256": "c212f75a248bbf8fc7f900f15e87d9448e5723734e8e77dab513dc33a55d0161"},
+    {"path": "ed.a", "bytes": 17557264, "sha256": "e43f4c8cee85b4deeb97f9335c378065749fccca20019b9645f88f899e2ae650"},
+    {"path": "egbg.a", "bytes": 136765816, "sha256": "73065dcdbf2d282d371e9d021dad1c0e8fe29cf1d0ef712988942d3632465b39"},
+    {"path": "music.a", "bytes": 403103552, "sha256": "30a0abc20bf2d0572db1c508e7201aca02bffb31d916cd556e4796db946eb3db"},
+    {"path": "se.a", "bytes": 30610682, "sha256": "ad84744c3bbc5a6d714f21ab828ce51efb32577dc3d50c79cf56f30f8da734ae"},
+    {"path": "sys.a", "bytes": 4576180, "sha256": "53fa44492ae0862f157625941088538fc78f910192438010650f7e46ba10651e"},
+    {"path": "tenshi_dvd.a", "bytes": 1383625, "sha256": "78842dcfc823eb93933dcfb239901d014df6f78faa00ec3c7fe8b76e764891d0"},
+    {"path": "voice.a", "bytes": 255459247, "sha256": "5fc97afe8aec046f90c8cc43cf38d765b1dd62816e4826f89bb66df6db762535"},
+    {"path": "openning.v", "bytes": 65251332, "sha256": "b51b766b9da4c5f83280bf5a532da89c451aa54a009245650de9230c9aea6cc8"}
+  ]
+}

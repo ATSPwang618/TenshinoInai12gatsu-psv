@@ -1,7 +1,10 @@
 build*/
 data/
 dist/
+realease/
 .tools/
+.work/
+.realease-*.partial/
 prepare/bin/
 prepare/obj/
 *.vpk

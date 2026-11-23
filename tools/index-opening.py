@@ -1,11 +1,15 @@
-"""Build a checked packet index for the bundled MP4; no video/audio re-encoding."""
+"""Build a checked packet index for the external MP4; no video/audio re-encoding."""
 from pathlib import Path
 import hashlib, json, struct, subprocess, fractions, re, argparse
 parser=argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--ffprobe",default="ffprobe")
+parser.add_argument("--output-dir",type=Path,help="directory containing generated opening.mp4 and opening.json")
 args=parser.parse_args()
 
-assets=Path(__file__).resolve().parents[1]/'assets'
+project=Path(__file__).resolve().parents[1]
+assets=(args.output_dir or project/'.work/media').resolve()
+if assets==project/'assets' or project/'assets' in assets.parents:
+    raise SystemExit('Generated media must not overwrite source assets')
 movie=assets/'opening.mp4'
 meta_path=assets/'opening.json'
 meta=json.loads(meta_path.read_text(encoding='utf-8'))

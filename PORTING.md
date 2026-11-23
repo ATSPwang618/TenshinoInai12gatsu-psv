@@ -1,6 +1,6 @@
 # Tenshi Vita · 原始资源直读版
 
-基于[Godot / C# 游戏](https://github.com/dorakyuraduang/TenshinoInai12gatsu-godot)移植的独立 C++ / SDL2 PSV 版本，PSV 上无需 Godot 或 .NET。当前为 **0.27 测试版**：按用户要求内置 H.264/AAC 片头，接入 SceVideodec/SceAudiodec 直接硬解；Logo 改为 GPU 合成。实机日志已确认 Logo 稳定在约 60 帧；新片头硬解路径仍需实机复验。保留 0.17 的行为差异修复、内置思源黑体及项目图标。
+基于[Godot / C# 游戏](https://github.com/dorakyuraduang/TenshinoInai12gatsu-godot)移植的独立 C++ / SDL2 PSV 版本，PSV 上无需 Godot 或 .NET。当前为 **0.27 测试版**：接入 SceVideodec/SceAudiodec 直接硬解；Logo 改为 GPU 合成。本地构建的 H.264/AAC 片头和索引已改为外置，放在 `ux0:/data/tenshi/opening.mp4`、`opening.idx`。历史版本的实机日志已确认 Logo 稳定在约 60 帧；本地新构建仍未进行实机复验。保留 0.17 的行为差异修复、内置思源黑体及项目图标。
 
 ## 安装
 
@@ -9,7 +9,7 @@
 安装包固定为 `dist/tenshi-vita.vpk`，后续构建直接更新同名文件，不再额外生成带版本号的 VPK。当前包内版本为 `00.27`，升级时内部版本号仍正常更新。
 
 1. 安装 `dist/tenshi-vita.vpk`，应用 ID `TNSH00001`，版本 `00.27`。
-2. 将下列原始资源放到 `ux0:/data/tenshi/`，无需解包。片头和中文字体已内置，不必再放 `openning.v` 或 `font.ttf`。
+2. 将下列原始资源放到 `ux0:/data/tenshi/`，无需解包。还需放入同次转换生成的 `opening.mp4` 和 `opening.idx`；中文字体内置，不必再放 `openning.v` 或 `font.ttf`。
 
 ```text
 ux0:/data/tenshi/
@@ -23,7 +23,7 @@ ux0:/data/tenshi/
   ed.a
 ```
 
-在 Windows Vita3K 中，这对应其配置 `pref-path` 下的 `ux0/data/tenshi/`，不是 `ux0/app/TNSH00001/`。VPK 包含程序、图标、OFL 思源黑体、许可及用户要求内置的片头；其余原始游戏资源自行提供。此版本验证的是本项目使用的 GB18030 资源版本。
+在 Windows Vita3K 中，这对应其配置 `pref-path` 下的 `ux0/data/tenshi/`，不是 `ux0/app/TNSH00001/`。本地 VPK 包含程序、气泡资源、OFL 思源黑体和许可；原始游戏归档及片头放在外部。此版本验证的是本项目使用的 GB18030 资源版本。
 
 ## 0.27 音频加载与预读
 
@@ -51,7 +51,7 @@ ux0:/data/tenshi/
 
 ## 0.23 片头解码内存修复（已包含）
 
-覆盖安装 `dist/tenshi-vita.vpk`。内置 MP4 保持 H.264 Main Level 3.1、800×600、30 fps、约 89.84 秒，AAC-LC 44.1 kHz 立体声。无需额外复制视频或插件。
+历史 0.23 的 MP4 参数保持 H.264 Main Level 3.1、800×600、30 fps、约 89.84 秒，AAC-LC 44.1 kHz 立体声。本地新构建沿用这些参数，但必须额外复制外置 MP4 和索引，不需要视频插件。
 
 0.22 实机日志已定位到 `avc-context / 0x80024309`：SDL GXM 在首张纹理创建时预留剩余 CDRAM，随后解码器从同一个池申请失败。0.23 将 AVC 上下文、参考帧、NV12 输出改用独立的 PHYCONT 连续主内存，按实机查询值共分配 13 MiB，并记录分配前后的可用内存。主机测试在 CDRAM 剩余为零时先重现旧错误，再验证修复后的全片流程；实机出帧仍需复验。详见 [0.23 内存修复记录](VIDEO_LOGO_FIXES_0.23.md)。
 
@@ -144,17 +144,21 @@ PSV 无桌面字体选择器；在数据目录额外放入 `font-alt.ttf` 后，
 
 ## 构建
 
+应用显示名称为 `December When There Is No Angel`，应用 ID `TNSH00001`、版本 `00.27` 和安装包名 `tenshi-vita.vpk` 保持不变。PowerShell 与 CMake 两条构建流程均递归引入 `sce_sys/` 下的图标、启动图、LiveArea 和说明书文件；`param.sfo` 由构建工具生成。`tools/vpk_resources.py` 在构建目录生成兼容副本：仅将图标透明色合成到浅色背景并移除透明度，保留 PNG 像素索引和不透明色；OFL 文本副本恢复官方 LF 字节并核对固定哈希。不会覆盖源码图片或许可。发布校验按同一规则比较副本，并核对 SFO；MP4、索引及游戏归档不得进入 VPK。
+
+打包回归：`python tests/build_metadata_test.py`、`python tests/package_release_test.py`、`python tests/vpk_resources_test.py`。前者在临时目录执行两条真实构建配置，仅替换 SDK 工具边界，不实际编译；发布测试使用合成 VPK，不代表真机安装。资源测试验证兼容副本及原图不变。WSL 中的 `python3 tests/opening_path_test.py` 编译实际路径方法，分别检查 Vita 外置 MP4 与桌面原视频路径。
+
 Windows 使用 PowerShell 7、Python 3 与 MSYS2 的 `tar`、`xz`、`bzip2`。从原片头重建还需要 PATH 中可用的 FFmpeg / FFprobe：
 
 ```powershell
 ./tools/bootstrap-windows.ps1 -MsysBin "D:/msys2/usr/bin"
-# 从源码 ZIP 重建时，先准备内置片头与索引：
+# 转码是准备外置数据的独立步骤，不是生成程序 VPK 的前提：
 python tools/transcode-opening.py "D:/原始资源/openning.v"
 ./tools/build-vita.ps1
 python tools/package-release.py
 ```
 
-也可从同版本 VPK 中同时提取 `assets/opening.mp4` 与 `assets/opening.idx` 到 `assets/`，然后跳过转码命令。仅提取 MP4 而没有索引无法完成打包。
+转码输出在 `assets/`，完成后把 `opening.mp4`、`opening.idx`、`opening.json` 一起复制到本地 `realease/data/`。也可从历史内置片头 VPK 中提取配套 MP4／索引，但必须与转换记录的哈希一致。本地新 VPK 不含可提取的视频；缺少视频不会阻止构建程序包，但无法正常完成启动流程。
 
 发布脚本同样更新固定文件名 `dist/tenshi-vita.zip`、`dist/tenshi-vita-source.zip` 和 `dist/SHA256SUMS.txt`。过去生成的历史文件不会自动删除；安装时使用上面的固定 VPK。
 
@@ -166,6 +170,19 @@ python tools/package-release.py
 cmake -S . -B build-vita-cmake -DTENSHI_VITA=ON
 cmake --build build-vita-cmake
 ```
+
+本机 WSL 构建环境为 `pocket-ubuntu`，SDK 位于 `/opt/vitasdk`（2026.08，GCC 15.2.0）。在 WSL 中进入项目目录后：
+
+```sh
+export VITASDK=/opt/vitasdk
+cmake -S . -B build-vita-wsl -DTENSHI_VITA=ON -DCMAKE_BUILD_TYPE=Release
+cmake --build build-vita-wsl -j 8
+mkdir -p dist
+cp build-vita-wsl/tenshi-vita.vpk dist/tenshi-vita.vpk
+python3 tools/package-release.py
+```
+
+安装包最终复制到 `realease/tenshi-vita.vpk`，外置数据放在同级 `data/`；不要把整个发布 ZIP 当作 VPK 安装。
 
 ## 开发验证
 

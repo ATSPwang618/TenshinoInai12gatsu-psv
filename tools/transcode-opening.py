@@ -1,14 +1,20 @@
-"""Rebuild the explicitly bundled H.264 opening from the matching original video."""
+"""Prepare the external H.264 opening from the matching original video."""
 from pathlib import Path
 import argparse, hashlib, json, subprocess, sys
 parser=argparse.ArgumentParser(description=__doc__)
 parser.add_argument("source",type=Path)
 parser.add_argument("--ffmpeg",default="ffmpeg")
 parser.add_argument("--ffprobe",default="ffprobe")
+parser.add_argument("--output-dir",type=Path,help="generated movie/index/metadata directory (never the source assets directory)")
+parser.add_argument("--metadata",type=Path,help="opening conversion specification")
 args=parser.parse_args()
-assets=Path(__file__).resolve().parents[1]/"assets"
+project=Path(__file__).resolve().parents[1]
+assets=(args.output_dir or project/".work/media").resolve()
+if assets==project/"assets" or project/"assets" in assets.parents:
+    raise SystemExit("Generated media must not overwrite source assets")
+assets.mkdir(parents=True,exist_ok=True)
 metaPath=assets/"opening.json"
-meta=json.loads(metaPath.read_text(encoding="utf-8"))
+meta=json.loads((args.metadata or project/"assets/opening.json").read_text(encoding="utf-8"))
 sourceHash=hashlib.sha256(args.source.read_bytes()).hexdigest()
 if sourceHash!=meta["sourceSha256"]:
     raise SystemExit("Source differs from the version recorded in assets/opening.json")
@@ -24,4 +30,5 @@ meta["encoderVersion"]=subprocess.check_output([args.ffmpeg,"-version"],text=Tru
 metaPath.write_text(json.dumps(meta,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
 print(f"Validated {v['nb_read_frames']} frames: {output}")
 
-subprocess.run([sys.executable, str(Path(__file__).with_name("index-opening.py")), "--ffprobe", args.ffprobe], check=True)
+subprocess.run([sys.executable, str(Path(__file__).with_name("index-opening.py")), "--ffprobe", args.ffprobe,
+                "--output-dir", str(assets)], check=True)

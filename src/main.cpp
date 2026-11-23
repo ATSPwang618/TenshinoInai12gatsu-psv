@@ -245,7 +245,7 @@ class App {
     }
     std::string openingPath() const {
 #ifdef __vita__
-        return "app0:/assets/opening.mp4";
+        return root + "/opening.mp4";
 #else
         return root + "/openning.v"; // Host reference backend exercises the original source.
 #endif
@@ -1222,7 +1222,7 @@ class App {
         SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "1");
         if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMECONTROLLER | SDL_INIT_TIMER))
             throw std::runtime_error(SDL_GetError());
-        window = SDL_CreateWindow("Tenshi Vita", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 960, 544,
+        window = SDL_CreateWindow("December When There Is No Angel", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 960, 544,
                                   SDL_WINDOW_SHOWN);
         if (!window)
             throw std::runtime_error(SDL_GetError());

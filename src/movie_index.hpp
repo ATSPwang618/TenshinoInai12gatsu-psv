@@ -44,7 +44,7 @@ class MovieIndex {
         File index(fopen((name.substr(0, name.find_last_of('.')) + ".idx").c_str(), "rb"), fclose);
         media.reset(fopen(name.c_str(), "rb"));
         if (!index || !media)
-            throw std::runtime_error("Cannot open bundled MP4/packet index");
+            throw std::runtime_error("Cannot open MP4/packet index: " + name);
         char magic[8];
         if (fread(magic, 1, 8, index.get()) != 8 || memcmp(magic, "TNSMP401", 8))
             throw std::runtime_error("Invalid movie index version");

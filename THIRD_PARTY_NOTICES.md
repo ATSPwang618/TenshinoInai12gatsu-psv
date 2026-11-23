@@ -1,6 +1,6 @@
 # Tenshi Vita 第三方说明
 
-本 PSV 移植的原创代码采用根目录 MIT 许可证。游戏剧本、图片和原始档案由玩家提供。0.20 按用户要求将原片头转为 H.264/AAC，并内置 VPK；片头不适用项目 MIT 或字体 OFL 许可，其来源及哈希见 `assets/opening.json`。其余原始档案不进入 VPK。0.16 起另行内置 Adobe 思源黑体，字体按 SIL OFL 1.1 分发，不适用项目 MIT 许可。
+本 PSV 移植的原创代码采用根目录 MIT 许可证。游戏剧本、图片和原始档案由玩家提供。历史 0.20 将原片头转为 H.264/AAC 并内置 VPK；本地新构建已将片头及索引移至玩家的外置数据目录，不再进入 VPK。片头不适用项目 MIT 或字体 OFL 许可，其来源及哈希见 `assets/opening.json`。其余原始档案也不进入 VPK。0.16 起另行内置 Adobe 思源黑体，字体按 SIL OFL 1.1 分发，不适用项目 MIT 许可。
 
 ## 代码与静态库
 
@@ -19,7 +19,7 @@
 
 分发 VPK 时请同时提供发布包中的 `tenshi-vita-source.zip`（包含本项目源码、构建脚本、解码器和 pthread 对应源码）及本说明，不要只转发二进制而丢弃源码资料。不得限制许可证允许的修改、重新链接及为调试修改而进行的逆向工程。
 
-本 PSV 程序不链接 Godot 主工程的 FFmpeg / Original Video 二进制。0.26 PSV 运行时使用系统 SceVideodec/SceCodecEngine 和 SceAudiodec 直接解码 H.264/AAC，SDL 负责画面与音频输出；PL_MPEG 仅用于桌面原视频参考验证。FFmpeg/libx264 作为开发机的离线转码工具，未链接或打包到 PSV 程序。源码 ZIP 不附带游戏片头文件，可使用自己的对应原文件和 `tools/transcode-opening.py` 重建，或从此 VPK 提取。逐帧索引由 `tools/index-opening.py` 使用 FFprobe 重建，转码脚本会自动调用它。
+本 PSV 程序不链接 Godot 主工程的 FFmpeg / Original Video 二进制。0.26 PSV 运行时使用系统 SceVideodec/SceCodecEngine 和 SceAudiodec 直接解码 H.264/AAC，SDL 负责画面与音频输出；PL_MPEG 仅用于桌面原视频参考验证。FFmpeg/libx264 作为开发机的离线转码工具，未链接或打包到 PSV 程序。本地源码 ZIP 和 VPK 均不附带游戏片头文件，可使用自己的对应原文件和 `tools/transcode-opening.py` 重建外置视频。逐帧索引由 `tools/index-opening.py` 使用 FFprobe 重建，转码脚本会自动调用它。
 
 用户指定的 `spyro-98/vita-hw-decoder`（固定提交 `12f3fff5aaf7145ee3839318bd1e8e2b6840197c`）及其 wiliwili 后端用于核对硬解 API、内存对齐与 NV12 布局。本项目使用针对固定片头编写的独立读取／调度实现；未复制或链接该 GPL 播放器库与其 FFmpeg 二进制，也未打包其截图。技术来源和验证边界见 `VIDEO_LOGO_FIXES_0.22.md`。
 

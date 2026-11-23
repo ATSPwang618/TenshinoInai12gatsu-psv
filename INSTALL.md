@@ -1,6 +1,6 @@
 # 安装与游玩说明
 
-Tenshi Vita 是从 [Godot / C# 重制项目](https://github.com/dorakyuraduang/TenshinoInai12gatsu-godot) 移植的独立 PSV 程序。本仓库只包含 PSV 移植项目，PSV 上不需要安装 Godot 或 .NET。安装包固定名为 **`tenshi-vita.vpk`**，应用 ID 为 `TNSH00001`；当前内部版本为 `00.27`。
+Tenshi Vita 是从 [Godot / C# 重制项目](https://github.com/dorakyuraduang/TenshinoInai12gatsu-godot) 移植的独立 PSV 程序，应用显示名称为 **December When There Is No Angel**。本仓库只包含 PSV 移植项目，PSV 上不需要安装 Godot 或 .NET。安装包固定名为 **`tenshi-vita.vpk`**，应用 ID 为 `TNSH00001`；当前内部版本为 `00.27`。
 
 下载：[0.27 测试版发布页](https://github.com/dorakyuraduang/TenshinoInai12gatsu-psv/releases/tag/v0.27) · [tenshi-vita.vpk](https://github.com/dorakyuraduang/TenshinoInai12gatsu-psv/releases/download/v0.27/tenshi-vita.vpk)。
 
@@ -13,6 +13,7 @@ Tenshi Vita 是从 [Godot / C# 重制项目](https://github.com/dorakyuraduang/T
 - 能运行自制程序、已经安装 VitaShell 的 PS Vita；或配置好的 Vita3K。
 - `tenshi-vita.vpk`，以及你自行提供的原始游戏资源。GitHub 的源码 ZIP 不是安装包。
 - 下表中的八个 `.a` 文件，必须来自同一套资源。程序直读归档，**不要解压这些 `.a` 文件**。
+- 本地构建版还需要同次转换产生的 `opening.mp4` 与 `opening.idx`；本机已经放在 `realease/data/`。
 
 本版只验证了本项目使用的 **GB18030 中文资源版本**。日文版、其他编码或其他修改版本未经过验证；不能仅改文件名就变成兼容资源，也不要混用不同版本的归档。程序内含 GB18030 解码表，不需要额外复制编码库或准备转换后的 JSON。
 
@@ -26,19 +27,21 @@ ux0:/data/tenshi/
   music.a         音乐
   se.a            音效
   ed.a            结尾资源
+  opening.mp4     外置 H.264/AAC 片头
+  opening.idx     与该 MP4 配套的播放索引
 ```
 
-八个文件都应直接位于 `tenshi` 目录下，避免多套一层游戏目录或 `data` 目录。请按上面的文件名保存。
+八个归档和两个片头文件都应直接位于 `tenshi` 目录下，避免多套一层游戏目录或 `data` 目录。请按上面的文件名保存。`opening.json` 是转换与哈希记录，可一同复制，但不参与运行时播放。
 
-当前 0.27 VPK 已内置思源黑体及其 SIL OFL 1.1 许可，并内置 H.264/AAC 片头及播放索引。**不需要另放 `font.ttf`、`openning.v` 或视频解码插件。** 旧 `font.ttf` 不会覆盖内置默认字体。字体授权见 [FONT_LICENSE.md](FONT_LICENSE.md)；原游戏的归档和片头不因程序源码的许可而获得再分发授权。
+本地 0.27 构建的 VPK 内置思源黑体及其 SIL OFL 1.1 许可，片头及索引改为外置。**不需要另放 `font.ttf`、原始 `openning.v` 或视频解码插件，但必须复制上面的 MP4 和索引。** 旧 `font.ttf` 不会覆盖内置默认字体。字体授权见 [FONT_LICENSE.md](FONT_LICENSE.md)；原游戏的归档和片头不因程序源码的许可而获得再分发授权。上方下载链接仍为上游历史发布包，不能据此判断本地构建的内容。
 
 ## PS Vita 真机安装
 
-1. 在电脑上准备 `tenshi-vita.vpk` 和八个原始归档。
+1. 在电脑上准备本地 `realease/tenshi-vita.vpk` 和 `realease/data/` 中的数据文件。
 2. 打开 VitaShell，通过 USB 或 FTP 把 VPK 传到例如 `ux0:/data/`。使用 USB 时，应连接映射为实际 `ux0:` 的存储设备。
 3. 在 VitaShell 中进入该目录，选中 `tenshi-vita.vpk`，按 VitaShell 配置的确认键启动安装，按屏幕提示完成确认。VPK 内的程序会安装到 `ux0:/app/TNSH00001/`。
-4. 新建 `ux0:/data/tenshi/`，把八个 `.a` 文件全部复制到这个目录。**资源目录是 `data/tenshi`，与程序的 `app/TNSH00001` 目录不同。**
-5. 结束传输，回到 LiveArea，启动 Tenshi Vita。
+4. 新建 `ux0:/data/tenshi/`，把 `realease/data/` 的内容全部复制到这个目录，包含八个 `.a` 文件、`opening.mp4` 和 `opening.idx`。**资源目录是 `data/tenshi`，与程序的 `app/TNSH00001` 目录不同。**
+5. 结束传输，回到 LiveArea，启动 December When There Is No Angel。
 
 VitaShell 提供文件管理、VPK 安装和 FTP 功能，项目主页见 [VitaShell](https://github.com/TheOfficialFloW/VitaShell)。安装完之后，传输用的 VPK 可以从存储卡删除；保留游戏的数据目录。
 
@@ -47,7 +50,7 @@ VitaShell 提供文件管理、VPK 安装和 FTP 功能，项目主页见 [VitaS
 1. 按 [Vita3K 官方快速开始](https://vita3k.org/quickstart) 配置模拟器和所需固件。
 2. 在 Vita3K 的 `File` 菜单选择归档安装项（通常为 `Install Archive (.zip / .vpk / .vci)`），选择 **`tenshi-vita.vpk`** 安装。不要把带源码和说明的整个发布 ZIP 当成游戏安装包。菜单名称及存储路径说明可参考 [官方 FAQ](https://vita3k.org/faq.html)。
 3. 找到 Vita3K 的实际模拟存储目录。它在配置中叫 `pref-path`，界面可能显示为 Vita FS / Emulated Storage Path；可通过模拟器的打开存储目录入口定位。便携版和自定义配置的位置会不同。
-4. 在这个存储根目录下建立 `ux0/data/tenshi/`，复制八个 `.a` 文件。
+4. 在这个存储根目录下建立 `ux0/data/tenshi/`，复制八个 `.a` 文件以及 `opening.mp4`、`opening.idx`。
 
 例如，若你的 `pref-path` 是 `D:/Vita3K/storage/`，则脚本文件应在：
 
@@ -118,6 +121,7 @@ PSV 存档格式与 Godot 版不互通；读取时也会检查剧情归档指纹
 | 现象或日志 | 检查方法 |
 | --- | --- |
 | `Missing original archive` | 根据错误中指定的文件，检查八个归档是否复制完整、目录是否正确、文件名是否正确。Vita3K 应检查实际 `pref-path`，不是模拟器程序所在目录。 |
+| `MISSING OPENING VIDEO` / `Cannot open MP4/packet index` | 检查 `ux0:/data/tenshi/opening.mp4` 与 `opening.idx` 都存在，并且来自同次转换。不要只复制八个归档，也不要用原始 `openning.v` 改名代替。 |
 | `Missing resource` / `Invalid module table` / `Invalid GB18030` | 归档可能损坏或来自不兼容版本。重新核对同一套 GB18030 资源，不要混用、解包或修改归档内容。 |
 | 报字体错误，但目录中有 `font.ttf` | 当前默认字体在 VPK 内，外部旧 `font.ttf` 不参与默认加载。重新覆盖安装当前包并检查日志中的实际字体路径；若启用了备用字体，确认 `font-alt.ttf` 存在且有效。 |
 | 点击字体按钮提示放入 `font-alt.ttf` | 该按钮切换的是可选备用字体，不表示内置思源黑体丢失。直接保留内置字体即可游玩。 |
